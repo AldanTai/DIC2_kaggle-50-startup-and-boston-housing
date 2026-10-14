@@ -123,8 +123,12 @@ def visualizations(result, selection):
     cols = st.columns(4)
     for c, (label, val) in zip(cols, [('TEST RMSE',f"{m['RMSE']:,.2f}"),('R² SCORE',f"{m['R²']:.4f}"),('MAE',f"{m['MAE']:,.2f}"),('MSE',f"{m['MSE']:,.0f}")]):
         c.metric(label,val)
-    tabs = st.tabs(['📈 Feature Selection','🎯 Actual vs Predicted','📉 Learning Curve','📋 Detailed Metrics','⚖️ Baseline vs Optuna'])
+    report_mode = st.session_state.get('report_mode', False)
+    section_labels = ['📈 Feature Selection', '🎯 Actual vs Predicted', '📉 Learning Curve', '📋 Detailed Metrics', '⚖️ Baseline vs Optuna']
+    tabs = [st.container() for _ in section_labels] if report_mode else st.tabs(section_labels)
     with tabs[0]:
+        if report_mode:
+            st.markdown("#### 📈 Feature Selection")
         if selection is None or selection.empty:
             st.info('勾選 Forward Feature Selection 並重新訓練，即可顯示特徵數量比較。')
         else:
@@ -141,6 +145,8 @@ def visualizations(result, selection):
                 st.dataframe(selection.round(3),use_container_width=True,hide_index=True)
             st.caption('此處顯示 Training Set 內部的交叉驗證結果，不使用最終 Test Set 選特徵。')
     with tabs[1]:
+        if report_mode:
+            st.markdown("#### 🎯 Actual vs Predicted")
         y, pred = np.asarray(result['y_test']), np.asarray(result['pred_test'])
         low, high = min(y.min(),pred.min()),max(y.max(),pred.max())
         f = go.Figure()
@@ -148,6 +154,8 @@ def visualizations(result, selection):
         f.add_trace(go.Scatter(x=[low,high],y=[low,high],mode='lines',name='Ideal',line=dict(color=GREEN,dash='dash')))
         st.plotly_chart(chart_style(f,height=340,x=f"Actual {result['target']}",y=f"Predicted {result['target']}"),use_container_width=True)
     with tabs[2]:
+        if report_mode:
+            st.markdown("#### 📉 Learning Curve")
         try:
             curve = compute_learning_curve(result)
             f=go.Figure()
@@ -158,12 +166,16 @@ def visualizations(result, selection):
         except ValueError as exc:
             st.warning(f'資料量不足以繪製曲線：{exc}')
     with tabs[3]:
+        if report_mode:
+            st.markdown("#### 📋 Detailed Metrics")
         st.dataframe(pd.DataFrame([result['train'],result['test']],index=['Train','Test']).round(4),use_container_width=True)
         st.write(f"**Chosen model:** {result['name']}　｜　**Baseline CV MSE:** {result['baseline_cv_mse']:,.2f}")
         if result['ridge_cv_mse'] is not None:
             st.write(f"**Optuna Ridge CV MSE:** {result['ridge_cv_mse']:,.2f}　｜　**Best alpha:** {result['alpha']:.6g}")
         st.caption('MAE = 平均絕對誤差；MSE = 平均平方誤差；RMSE = 原單位的均方根誤差；R² = 解釋變異程度。')
     with tabs[4]:
+        if report_mode:
+            st.markdown("#### ⚖️ Baseline vs Optuna")
         st.subheader('Baseline vs Optuna Ridge — Train-only Cross Validation')
         entries = [{'Model':'LinearRegression', 'CV RMSE':np.sqrt(result['baseline_cv_mse'])}]
         if result['ridge_cv_mse'] is not None:
@@ -262,7 +274,7 @@ def startup():
     else:
         st.markdown('### 3. Modeling')
         st.info('點選 **Train & Evaluate Model**，啟動 LinearRegression 與選用的 Optuna / Feature Selection。')
-    with st.expander('🧪 Step 1 Extra — Random Data Scatter Plot'):
+    with st.expander('🧪 Step 1 Extra — Random Data Scatter Plot', expanded=st.session_state.get('report_mode', False)):
         rng=np.random.default_rng(42)
         x=rng.uniform(0,10,100); y=3*x+10+rng.normal(0,5,100)
         f=go.Figure(go.Scatter(x=x,y=y,mode='markers',marker=dict(color=PURPLE,opacity=.7)))
@@ -270,8 +282,39 @@ def startup():
 
 
 def stock():
-    stock_page()
+    stock_page(report_mode=st.session_state.get('report_mode', False))
 
+
+# Screenshot-friendly presentation mode: shows all analysis panels vertically.
+with st.sidebar:
+    st.header('📸 Export / Screenshot')
+    st.toggle('報告／長截圖模式', key='report_mode', help='將所有分析頁籤改成垂直顯示，展開附加圖表，方便截圖或列印 PDF。')
+    if st.session_state.get('report_mode'):
+        st.info('請先訓練模型；圖表載入完畢後，可用 Chrome F12 → Ctrl+Shift+P → Capture full size screenshot，或 Ctrl+P 儲存 PDF。')
+
+if st.session_state.get('report_mode'):
+    st.markdown('''<style>
+    /* Only applied in report mode; avoid touching normal application scrolling. */
+    [data-testid="stMain"] {overflow: visible !important; height: auto !important; max-height: none !important;}
+    [data-testid="stMainBlockContainer"] {max-width: 1050px !important; overflow: visible !important;}
+    [data-testid="stAppViewContainer"] {overflow: visible !important;}
+    [data-testid="stPlotlyChart"] {overflow: visible !important; break-inside: avoid; page-break-inside: avoid;}
+    [data-testid="stMetric"] {break-inside: avoid; page-break-inside: avoid;}
+    @media print {
+        @page { size: A4 portrait; margin: 11mm; }
+        html, body, #root, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+            height: auto !important; max-height: none !important; overflow: visible !important;
+        }
+        [data-testid="stSidebar"], [data-testid="stHeader"], [data-testid="stToolbar"],
+        [data-testid="stDecoration"], [data-testid="stStatusWidget"],
+        [data-testid="stBottom"], footer {display: none !important;}
+        .block-container {max-width: 100% !important; padding: 0 !important;}
+        .hero, [data-testid="stPlotlyChart"], [data-testid="stMetric"] {
+            break-inside: avoid; page-break-inside: avoid;
+        }
+    }
+    </style>''', unsafe_allow_html=True)
+    st.info('📸 報告模式已啟用：分析圖表改為依序展示。列印前請等待所有圖表渲染完成。')
 
 st.markdown('<div class="brand">📈 &nbsp; ML Regression Explorer <span class="tagline">CRISP-DM</span></div>',unsafe_allow_html=True)
 top1,top2=st.columns([3,1])

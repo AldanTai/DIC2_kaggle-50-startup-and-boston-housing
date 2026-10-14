@@ -19,7 +19,7 @@ def fetch_yahoo(ticker, period):
     return downloaded.reset_index()[['Date', 'Close']]
 
 
-def stock_page():
+def stock_page(report_mode=False):
     st.markdown('<div class="hero"><h2>2330.TW — Stock Forecast Workflow</h2><p>台積電歷史股價預測：以過去收盤價建立 Lag / Moving Average Features，依時間順序切分資料，使用 Ridge Regression + TimeSeriesSplit 評估與調參。</p><div class="hero-tags">◈ 2330.TW &nbsp;&nbsp; ⚡ sklearn / Optuna &nbsp;&nbsp; ✦ Time-series Split &nbsp;&nbsp; ◆ Model Deployment</div></div>', unsafe_allow_html=True)
     st.markdown('### 1. Data Understanding — 股價資料來源')
     with st.container(border=True):
@@ -80,7 +80,7 @@ def stock_page():
                 a.metric('ROWS', len(prices))
                 b.metric('FIRST DATE', str(prices['Date'].iloc[0].date()))
                 c.metric('LAST CLOSE', f"{prices['Close'].iloc[-1]:,.2f}")
-                with st.expander('檢視資料與歷史價格'):
+                with st.expander('檢視資料與歷史價格', expanded=report_mode):
                     st.dataframe(prices.tail(15), use_container_width=True)
                     fig = go.Figure(go.Scatter(x=prices['Date'], y=prices['Close'], mode='lines', line=dict(color=PURPLE), name='Historical Close'))
                     fig.update_layout(height=300, xaxis_title='Date', yaxis_title='Adjusted Close / Close', margin=dict(l=25,r=15,t=15,b=25))
@@ -130,8 +130,11 @@ def stock_page():
     else:
         st.warning('目前 Ridge 未勝過前一日收盤價基準；較高的 R² 不代表一定優於簡單基準。')
     st.warning('股價資料具有不確定性，僅作為教學示範，並非投資建議。請比較模型 RMSE 與前一日收盤價基準，勿只看 R²。')
-    tabs = st.tabs(['📈 Actual vs Predicted', '📋 Detailed Metrics', '🔮 Next Price Forecast'])
+    section_labels = ['📈 Actual vs Predicted', '📋 Detailed Metrics', '🔮 Next Price Forecast']
+    tabs = [st.container() for _ in section_labels] if report_mode else st.tabs(section_labels)
     with tabs[0]:
+        if report_mode:
+            st.markdown("#### 📈 Actual vs Predicted")
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=res['date_test'], y=res['actual_test'], name='Actual Close', mode='lines', line=dict(color=GREEN, width=2)))
         fig.add_trace(go.Scatter(x=res['date_test'], y=res['pred_test'], name='Ridge Prediction', mode='lines', line=dict(color=PURPLE, width=2)))
@@ -139,12 +142,16 @@ def stock_page():
         fig.update_layout(height=400, margin=dict(l=30,r=25,t=20,b=25), xaxis_title='Date', yaxis_title='Close Price', plot_bgcolor='white')
         st.plotly_chart(fig, use_container_width=True)
     with tabs[1]:
+        if report_mode:
+            st.markdown("#### 📋 Detailed Metrics")
         st.dataframe(pd.DataFrame([res['train'], res['test']], index=['Train', 'Test']).round(4), use_container_width=True)
         st.write(f"**Ridge alpha:** {res['alpha']:.6g}　｜　**TimeSeriesSplit CV RMSE:** {res['cv_mse']**0.5:,.2f}")
         st.caption('測試集依日期排序，沒有使用隨機 train_test_split。TimeSeriesSplit 只在訓練集進行模型調參。')
     with tabs[2]:
+        if report_mode:
+            st.markdown("#### 🔮 Next Price Forecast")
         horizon = st.slider('預測未來幾個交易觀測點（遞迴預測）', 1, 10, 3)
-        if st.button('✨ Forecast Next Prices'):
+        if report_mode or st.button('✨ Forecast Next Prices'):
             future = forecast_next(res, horizon)
             st.dataframe(pd.DataFrame({'Forecast Step': range(1, horizon+1), 'Predicted Close': future}), hide_index=True, use_container_width=True)
             fig_future = go.Figure()
